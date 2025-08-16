@@ -7,7 +7,7 @@ UNIT_SRC="$PKG_SHARE/systemd/user"
 ENV_SRC="$PKG_SHARE/env.example"
 
 # target XDG dirs
-USER_UNIT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/systemd/user"
+USER_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/libation-systemd"
 ENV_FILE="$CONF_DIR/env"
 

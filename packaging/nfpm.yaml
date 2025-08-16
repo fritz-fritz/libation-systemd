@@ -31,6 +31,10 @@ contents:
     dst: /usr/bin/setup-libation-systemd
     file_info:
       mode: 0755
+  - src: scripts/migrate-s3.sh
+    dst: /usr/share/libation-systemd/migrate-s3.sh
+    file_info:
+      mode: 0755
 
 overrides:
   deb:
