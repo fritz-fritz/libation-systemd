@@ -1,0 +1,25 @@
+[Unit]
+Description=Warm up B2 metadata cache for Libation
+Requires=libation-b2.service
+After=libation-b2.service
+PartOf=libation.service
+
+[Service]
+Type=oneshot
+Slice=app-libation.slice
+EnvironmentFile=%h/.config/libation-systemd/env
+
+# Notify we are populating our cache
+ExecStart=-/usr/bin/notify-send --app-name=Libation --icon=libation "Crawling library…" "Building directory cache for faster launch"
+
+# Wait for the FUSE mount to be present
+ExecStart=/bin/sh -c 'for i in $(seq 1 50); do mountpoint -q $MOUNTPOINT && exit 0; sleep 0.2; done; echo "mount not ready" >&2; exit 1'
+# Wait until RC answers (prevents races if rclone started but RC not yet listening)
+ExecStart=/bin/sh -c 'for i in $(seq 1 50); do /usr/bin/rclone rc rc/noopauth >/dev/null 2>&1 && exit 0; sleep 0.2; done; echo "rc not ready" >&2; exit 1'
+# Ask the MOUNT to refresh its cache recursively (fast, no TCP)
+ExecStart=/usr/bin/rclone rc vfs/refresh recursive=true
+# Notify ready
+ExecStartPost=-/usr/bin/notify-send --app-name=Libation --icon=libation "Library ready" "VFS cache warmed"
+
+# Small timeouts keep boot fast if things are wrong
+TimeoutStartSec=30s

@@ -1,0 +1,66 @@
+[Unit]
+Description=Mount S3 (rclone) for Libation
+After=network-online.target
+Wants=network-online.target
+PartOf=libation.service
+BindsTo=libation.service
+
+[Service]
+Type=simple
+Slice=app-libation.slice
+EnvironmentFile=%h/.config/libation-systemd/env
+
+# Let the user know we’re starting the mount
+ExecStartPre=-/usr/bin/notify-send --app-name=Libation --icon=libation "Mounting storage…" "Connecting to B2 and preparing mount"
+
+# Best-effort unmount if something is already there
+ExecStartPre=-/bin/fusermount -u -z $MOUNTPOINT
+# Make sure the mountpoint exists
+ExecStartPre=/usr/bin/mkdir -p $MOUNTPOINT
+
+# Run rclone in the foreground
+ExecStart=/usr/bin/rclone -vv mount :s3:$BUCKET $MOUNTPOINT \
+  --s3-no-check-bucket \
+  --uid %U --gid %G --umask 002 \
+  --vfs-cache-mode writes \
+  --vfs-cache-poll-interval 30m \
+  --poll-interval 0 \
+  --dir-cache-time 24h \
+  --attr-timeout 24h \
+  --use-server-modtime \
+  --bwlimit $UP_LIMIT:$DOWN_LIMIT \
+  --cache-dir /tmp/libation \
+  --exclude "/.Trash-*/**" \
+  --rc
+
+# If MIGRATION_NEEDED=true
+ExecStartPost=/bin/sh -e -c '\
+  if [ "${MIGRATION_NEEDED:-false}" = "true" ] && [ -d "${MOUNTPOINT}.old" ]; then \
+    echo "⟳ Migrating ${MOUNTPOINT}.old → s3://$BUCKET/"; \
+    if /usr/bin/rclone copy "${MOUNTPOINT}.old/." :s3:$BUCKET \
+         --s3-no-check-bucket --transfers 20; then \
+      echo "✔ Migration succeeded, removing ${MOUNTPOINT}.old"; \
+      /usr/bin/rm -rf "${MOUNTPOINT}.old"; \
+      echo "⟳ Refreshing VFS dir-cache"; \
+      /usr/bin/rclone rc vfs/refresh recursive=true || echo "⚠ unable to refresh cache"; \
+    else \
+      echo "✖ Migration failed, keeping ${MOUNTPOINT}.old"; \
+    fi; \
+    # Now strip MIGRATION_NEEDED from the immutable env file
+    ENVFILE="%h/.config/libation-systemd/env"; \
+    /usr/bin/chattr -i "$ENVFILE" 2>/dev/null || :; \
+    /usr/bin/sed -i "/^MIGRATION_NEEDED=/d" "$ENVFILE"; \
+    /usr/bin/chattr +i "$ENVFILE"; \
+    echo "✔ Cleared MIGRATION_NEEDED flag"; \
+  fi
+'
+
+# Clean unmount on stop
+ExecStop=/bin/fusermount -u -z $MOUNTPOINT
+
+Restart=on-failure
+RestartSec=5s
+RemainAfterExit=no
+
+TimeoutStartSec=30s
+TimeoutStopSec=10s

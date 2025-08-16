@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# where nfpm put everything
+PKG_SHARE=/usr/share/libation-systemd
+UNIT_SRC="$PKG_SHARE/systemd/user"
+ENV_SRC="$PKG_SHARE/env.example"
+
+# target XDG dirs
+USER_UNIT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/systemd/user"
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/libation-systemd"
+ENV_FILE="$CONF_DIR/env"
+
+# install units
+mkdir -p "$USER_UNIT_DIR"
+cp -n "$UNIT_SRC"/*.service "$USER_UNIT_DIR"/
+cp -n "$UNIT_SRC"/*.slice   "$USER_UNIT_DIR"/
+
+# install env template + init it
+mkdir -p "$CONF_DIR"
+
+# detect first‐time install vs existing config
+FIRST_TIME=false
+if [[ ! -e "$ENV_FILE" ]]; then
+  FIRST_TIME=true
+fi
+
+# on first‐time, copy template and seed a random RC pass
+if [[ "$FIRST_TIME" = true ]]; then
+  cp -n "$ENV_SRC" "$ENV_FILE"
+  sed -i "s/RCLONE_RC_PASS=.*/RCLONE_RC_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c32)/" "$ENV_FILE"
+
+  # detect a free port for rclone RC and set RCLONE_RC_ADDR
+  find_free_port() {
+    local port
+    while :; do
+      port=$(shuf -i 1024-65535 -n1)
+      # check if any listener is on that port
+      if ! ss -ltn | awk '{print $4}' | grep -q ":$port$"; then
+        echo "$port"
+        return
+      fi
+    done
+  }
+  FREE_PORT=$(find_free_port)
+  sed -i "s|^RCLONE_RC_ADDR=.*|RCLONE_RC_ADDR=127.0.0.1:${FREE_PORT}|" "$ENV_FILE"
+  echo "Set RCLONE_RC_ADDR=127.0.0.1:${FREE_PORT} in $ENV_FILE"
+
+  chmod 600 "$ENV_FILE"
+  echo "Created $ENV_FILE — now configuring S3 settings."
+fi
+
+# if not first‐time, ask whether to reconfigure
+skip_config=false
+if [[ "$FIRST_TIME" = false ]]; then
+  if command -v whiptail >/dev/null 2>&1; then
+    if ! whiptail --title "libation-systemd" --yesno \
+      "Configuration already exists at $ENV_FILE.\nReconfigure settings?" 8 60; then
+      echo "Skipping reconfiguration."
+      skip_config=true
+    fi
+  else
+    read -rp "Configuration exists at $ENV_FILE. Reconfigure? [y/N] " ans
+    case "$ans" in [Yy]*) ;; *) echo "Skipping reconfiguration."; skip_config=true ;; esac
+  fi
+fi
+
+# perform prompts, mountpoint detection & migration only if not skipping
+if [[ "$skip_config" = false ]]; then
+
+  # if re-configuring an existing file, make it mutable first
+  if [[ "$FIRST_TIME" = false ]]; then
+    chattr -i "$ENV_FILE" || true
+  fi
+
+  # helper to prompt via whiptail or fallback to read
+  prompt() {
+    local var=$1 label=$2 default
+    default="$(grep -E "^${var}=" "$ENV_FILE" | cut -d= -f2-)"
+    if command -v whiptail >/dev/null 2>&1; then
+      whiptail --title "libation-systemd" \
+        --inputbox "$label" 10 60 "$default" \
+        3>&1 1>&2 2>&3
+    else
+      read -rp "$label [$default]: " input
+      echo "${input:-$default}"
+    fi
+  }
+
+  # ask S3 and bucket parameters
+  RCLONE_S3_PROVIDER=$(prompt RCLONE_S3_PROVIDER "Enter S3 Provider Name:")
+  RCLONE_S3_ENDPOINT=$(prompt RCLONE_S3_ENDPOINT "Enter S3 Endpoint URL:")
+  RCLONE_S3_ACCESS_KEY_ID=$(prompt RCLONE_S3_ACCESS_KEY_ID "Enter Access ID:")
+  RCLONE_S3_SECRET_ACCESS_KEY=$(prompt RCLONE_S3_SECRET_ACCESS_KEY "Enter Access Key:")
+  BUCKET=$(prompt BUCKET "Enter Bucket name:")
+  UP_LIMIT=$(prompt UP_LIMIT "Enter Upload Bandwidth Limit:")
+  DOWN_LIMIT=$(prompt DOWN_LIMIT "Enter Download Bandwidth Limit:")
+
+  # write them back
+  for v in RCLONE_S3_PROVIDER RCLONE_S3_ENDPOINT RCLONE_S3_ACCESS_KEY_ID RCLONE_S3_SECRET_ACCESS_KEY BUCKET; do
+    sed -i "s|^${v}=.*|${v}=${!v}|" "$ENV_FILE"
+  done
+
+  # auto‐detect MOUNTPOINT from ~/Libation/Settings.json ("Books" key)
+  SETTINGS_JSON="$HOME/Libation/Settings.json"
+  if [[ -f "$SETTINGS_JSON" ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      MOUNTPOINT=$(jq -r '.Books' "$SETTINGS_JSON")
+    else
+      MOUNTPOINT=$(grep -Po '"Books"\s*:\s*"\K[^"]+' "$SETTINGS_JSON")
+    fi
+
+    if [[ -n "$MOUNTPOINT" ]]; then
+      sed -i "s|^MOUNTPOINT=.*|MOUNTPOINT=$MOUNTPOINT|" "$ENV_FILE"
+      echo "Set MOUNTPOINT=$MOUNTPOINT in $ENV_FILE"
+
+      # if the mountpoint dir exists, is not a mount, and is non-empty: offer to migrate
+      if [ -d "$MOUNTPOINT" ] && ! mountpoint -q "$MOUNTPOINT" && [ "$(ls -A "$MOUNTPOINT")" ]; then
+        # ask user
+        if command -v whiptail >/dev/null 2>&1; then
+          if whiptail --title "libation-systemd" --yesno \
+            "Found existing data in:\n  $MOUNTPOINT\n\nMove it to ${MOUNTPOINT}.old and mark for migration to S3?" \
+            12 60; then
+            migrate=true
+          else
+            migrate=false
+          fi
+        else
+          read -rp "Found data in $MOUNTPOINT. Move to ${MOUNTPOINT}.old and mark for migration to S3? [y/N] " ans
+          case "$ans" in [Yy]*) migrate=true ;; *) migrate=false ;; esac
+        fi
+
+        if [[ "$migrate" = true ]]; then
+          mv "$MOUNTPOINT" "${MOUNTPOINT}.old"
+          echo "Existing data moved to ${MOUNTPOINT}.old"
+          # set MIGRATION_NEEDED=true
+          if grep -q "^MIGRATION_NEEDED=" "$ENV_FILE"; then
+            sed -i "s|^MIGRATION_NEEDED=.*|MIGRATION_NEEDED=true|" "$ENV_FILE"
+          else
+            echo "MIGRATION_NEEDED=true" >> "$ENV_FILE"
+          fi
+        else
+          echo "Skipping migration of existing data at $MOUNTPOINT"
+          echo "You must manually move your data prior to starting libation.service"
+        fi
+      fi
+    else
+      echo "Warning: could not extract 'Books' path from $SETTINGS_JSON"
+    fi
+  else
+    echo "Warning: $SETTINGS_JSON not found; skipping MOUNTPOINT auto-detect"
+  fi
+fi
+
+# after all edits, make the env file immutable
+chattr +i "$ENV_FILE" || true
+
+# reload user‐units
+systemctl --user daemon-reload
+
+cat <<EOF
+
+All set. You can now:
+
+  systemctl --user start libation.service
+  journalctl --user -f -u libation.service -u libation-b2.service -u libation-b2-warmup.service
+
+To start at login:
+
+  systemctl --user enable libation.service
+
+You can re-run this script to re-configure or setup for another user:
+
+  setup-libation-systemd
+
+EOF
