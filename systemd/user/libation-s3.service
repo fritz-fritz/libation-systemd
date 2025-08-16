@@ -34,7 +34,7 @@ ExecStart=/usr/bin/rclone mount :s3:${BUCKET} ${MOUNTPOINT} \
   --rc
 
 # If MIGRATION_NEEDED=true
-ExecStartPost=/bin/sh -c '/usr/share/libation-systemd/migrate-s3.sh 2>&1 &'
+ExecStartPost=/bin/sh -c 'setsid /usr/share/libation-systemd/migrate-s3.sh 2>&1 &'
 
 # Clean unmount on stop
 ExecStop=/bin/fusermount -u -z ${MOUNTPOINT}
