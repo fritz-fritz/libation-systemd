@@ -1,7 +1,7 @@
 [Unit]
-Description=Warm up B2 metadata cache for Libation
-Requires=libation-b2.service
-After=libation-b2.service
+Description=Warm up S3 metadata cache for Libation
+Requires=libation-s3.service
+After=libation-s3.service
 PartOf=libation.service
 
 [Service]

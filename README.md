@@ -1,7 +1,7 @@
 # libation-systemd
 
 [![Release](https://img.shields.io/github/v/release/fritz-fritz/libation-systemd)](https://github.com/fritz-fritz/libation-systemd/releases) [![Github All Releases](https://img.shields.io/github/downloads/fritz-fritz/libation-systemd/total.svg)](https://github.com/fritz-fritz/libation-systemd/releases/)  
-[![License](https://img.shields.io/badge/license-GPL%20v3-blue?logo=GPLv3&logoSize=auto)](COPYING) [Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
+[![License](https://img.shields.io/badge/license-GPL%20v3-blue?logo=GPLv3&logoSize=auto)](COPYING) ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux)
 
 > User systemd units and helpers to mount S3 storage via rclone and launch Libation with warm caches and clean teardown.
 

@@ -1,7 +1,7 @@
 name: libation-systemd
 arch: all
 platform: linux
-version: "v{{ .Version }}"
+version: ${TAG_VERSION}
 section: misc
 priority: optional
 maintainer: FRITZ|FRITZ <code@fritztech.net>
@@ -15,10 +15,10 @@ contents:
   # systemd user units
   - src: systemd/user/libation.service
     dst: /usr/share/libation-systemd/systemd/user/libation.service
-  - src: systemd/user/libation-b2.service
-    dst: /usr/share/libation-systemd/systemd/user/libation-b2.service
-  - src: systemd/user/libation-b2-warmup.service
-    dst: /usr/share/libation-systemd/systemd/user/libation-b2-warmup.service
+  - src: systemd/user/libation-s3.service
+    dst: /usr/share/libation-systemd/systemd/user/libation-s3.service
+  - src: systemd/user/libation-s3-warmup.service
+    dst: /usr/share/libation-systemd/systemd/user/libation-s3-warmup.service
   - src: systemd/user/app-libation.slice
     dst: /usr/share/libation-systemd/systemd/user/app-libation.slice
 
@@ -48,29 +48,5 @@ overrides:
     recommends:
       - libnotify
 
-# also produce a plain tarball with the same files
-formats:
-  - deb
-  - rpm
-  - tar.gz
-
-rpm:
-  summary: Libation systemd user units + rclone mount
-deb:
-  recommends:
-    - dbus-user-session
-
 scripts:
-  postinstall: |
-    #!/bin/sh
-    # determine real user (if apt was run under sudo)
-    USER="${SUDO_USER:-$(logname 2>/dev/null || echo root)}"
-    if [ "$USER" != "root" ] && command -v runuser >/dev/null 2>&1; then
-      echo "Running interactive setup for $USER…"
-      runuser -l "$USER" -c "/usr/bin/setup-libation-systemd" || true
-    else
-      echo ""
-      echo "To finish setup, please run as your user:"
-      echo "  setup-libation-systemd"
-      echo ""
-    fi
+  postinstall: ./scripts/postinstall.sh

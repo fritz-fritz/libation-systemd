@@ -2,23 +2,55 @@ name: release
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v?[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
 
 jobs:
-  nfpm:
+  release:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up nfpm
-        uses: goreleaser/nfpm-action@v2
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          version: latest
+          go-version: '1.24.4'
+
+      # - name: Install rpm for nfpm
+      #   run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Install nfpm CLI
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Determine Version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=unknown" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build packages
-        run: nfpm pkg -f packaging/nfpm.yaml -p deb -p rpm -p tar.gz -t dist/
+        env:
+          TAG_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          echo "Building packages for version: $TAG_VERSION"
+          mkdir -p dist
+          nfpm pkg -f packaging/nfpm.yaml -p deb        -t dist
+          nfpm pkg -f packaging/nfpm.yaml -p rpm        -t dist
+          nfpm pkg -f packaging/nfpm.yaml -p archlinux  -t dist
 
-      - name: Upload release assets
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: Release v${{ steps.version.outputs.VERSION }}
           files: dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          make_latest: true

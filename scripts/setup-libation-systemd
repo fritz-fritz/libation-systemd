@@ -55,7 +55,7 @@ skip_config=false
 if [[ "$FIRST_TIME" = false ]]; then
   if command -v whiptail >/dev/null 2>&1; then
     if ! whiptail --title "libation-systemd" --yesno \
-      "Configuration already exists at $ENV_FILE.\nReconfigure settings?" 8 60; then
+      "Configuration already exists at $ENV_FILE.\n\nReconfigure settings?" 10 60; then
       echo "Skipping reconfiguration."
       skip_config=true
     fi
@@ -67,11 +67,6 @@ fi
 
 # perform prompts, mountpoint detection & migration only if not skipping
 if [[ "$skip_config" = false ]]; then
-
-  # if re-configuring an existing file, make it mutable first
-  if [[ "$FIRST_TIME" = false ]]; then
-    chattr -i "$ENV_FILE" || true
-  fi
 
   # helper to prompt via whiptail or fallback to read
   prompt() {
@@ -152,9 +147,6 @@ if [[ "$skip_config" = false ]]; then
   fi
 fi
 
-# after all edits, make the env file immutable
-chattr +i "$ENV_FILE" || true
-
 # reload user‐units
 systemctl --user daemon-reload
 
@@ -163,7 +155,7 @@ cat <<EOF
 All set. You can now:
 
   systemctl --user start libation.service
-  journalctl --user -f -u libation.service -u libation-b2.service -u libation-b2-warmup.service
+  journalctl --user -f -u libation.service -u libation-s3.service -u libation-s3-warmup.service
 
 To start at login:
 

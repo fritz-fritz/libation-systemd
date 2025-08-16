@@ -11,7 +11,7 @@ Slice=app-libation.slice
 EnvironmentFile=%h/.config/libation-systemd/env
 
 # Let the user know we’re starting the mount
-ExecStartPre=-/usr/bin/notify-send --app-name=Libation --icon=libation "Mounting storage…" "Connecting to B2 and preparing mount"
+ExecStartPre=-/usr/bin/notify-send --app-name=Libation --icon=libation "Mounting storage…" "Connecting to S3 and preparing mount"
 
 # Best-effort unmount if something is already there
 ExecStartPre=-/bin/fusermount -u -z $MOUNTPOINT
