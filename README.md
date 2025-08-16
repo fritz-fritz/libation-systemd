@@ -7,6 +7,8 @@
 
 ---
 
+This project is for use with the wonderful application [Libation](https://github.com/rmcrackan/Libation).
+
 ## ✨ Features
 
 - Automated migration of existing files to S3
