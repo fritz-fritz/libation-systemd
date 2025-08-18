@@ -1,0 +1,12 @@
+# environment files
+.env
+
+# Editor swap files
+*~
+*.swp
+
+# macOS
+.DS_Store
+
+# Packaging output
+dist/
