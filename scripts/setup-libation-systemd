@@ -11,13 +11,16 @@ USER_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/libation-systemd"
 ENV_FILE="$CONF_DIR/env"
 
-# install units
-mkdir -p "$USER_UNIT_DIR"
-cp -n "$UNIT_SRC"/*.service "$USER_UNIT_DIR"/
-cp -n "$UNIT_SRC"/*.slice   "$USER_UNIT_DIR"/
+# Unit Files ( will determine which libation.service to use later )
+UNIT_FILES=(
+  "libation-s3.service"
+  "libation-s3-warmup.service"
+  "app-libation.slice"
+)
 
-# install env template + init it
+# ensure paths
 mkdir -p "$CONF_DIR"
+mkdir -p "$USER_UNIT_DIR"
 
 # detect first‐time install vs existing config
 FIRST_TIME=false
@@ -74,11 +77,28 @@ if [[ "$skip_config" = false ]]; then
     default="$(grep -E "^${var}=" "$ENV_FILE" | cut -d= -f2-)"
     if command -v whiptail >/dev/null 2>&1; then
       whiptail --title "libation-systemd" \
-        --inputbox "$label" 10 60 "$default" \
+        --inputbox "$label" 12 60 "$default" \
         3>&1 1>&2 2>&3
     else
       read -rp "$label [$default]: " input
       echo "${input:-$default}"
+    fi
+  }
+
+  prompt_yesno() {
+    local label=$1
+    if command -v whiptail >/dev/null 2>&1; then
+      whiptail --title "libation-systemd" \
+        --yesno "$label" 12 60 \
+        3>&1 1>&2 2>&3
+      if [[ $? -eq 0 ]]; then
+        echo yes
+      else
+        echo no
+      fi
+    else
+      read -rp "$label [Y/n]: " input
+      case "${input:-Y}" in [Yy]*) echo yes ;; *) echo no ;; esac
     fi
   }
 
@@ -145,7 +165,34 @@ if [[ "$skip_config" = false ]]; then
   else
     echo "Warning: $SETTINGS_JSON not found; skipping MOUNTPOINT auto-detect"
   fi
+
+  # ask whether to start minimized
+  if command -v kdocker >/dev/null 2>&1; then
+    START_MINIMIZED=$(prompt_yesno "You have kdocker installed.\n\nLaunch Libation minimized to tray?")
+    sed -i "s|^START_MINIMIZED=.*|START_MINIMIZED=${START_MINIMIZED}|" "$ENV_FILE"
+  fi
 fi
+
+# read back the actual START_MINIMIZED value
+START_MINIMIZED_VAL="$(grep -E '^START_MINIMIZED=' "$ENV_FILE" | cut -d= -f2-)"
+
+# decide which file to symlink as libation.service
+if [[ "$START_MINIMIZED_VAL" == "yes" ]] && command -v kdocker >/dev/null 2>&1; then
+  variant="libation-kdocker.service"
+else
+  variant="libation.service"
+fi
+
+echo "==> Linking $variant as libation.service in $USER_UNIT_DIR"
+ln -sfn "$UNIT_SRC/$variant" "$USER_UNIT_DIR/libation.service"
+
+# link all the other units/slice
+for unit in "${UNIT_FILES[@]}"; do
+  src="$UNIT_SRC/$unit"
+  dst="$USER_UNIT_DIR/$unit"
+  echo "==> Linking $unit"
+  ln -sfn "$src" "$dst"
+done
 
 # reload user‐units
 systemctl --user daemon-reload

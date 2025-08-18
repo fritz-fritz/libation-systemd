@@ -1,0 +1,22 @@
+[Unit]
+Description=Libation
+Requires=libation-s3.service libation-s3-warmup.service
+After=libation-s3.service libation-s3-warmup.service
+BindsTo=libation-s3.service
+
+[Service]
+Type=exec
+Slice=app-libation.slice
+EnvironmentFile=%h/.config/libation-systemd/env
+ExecStartPre=/bin/sh -c 'mountpoint -q "$MOUNTPOINT"'
+ExecStartPre=-/usr/bin/notify-send --app-name=Libation --icon=libation "Launching GUI…" "Starting Libation"
+ExecStart=/usr/bin/env sh -c 'if command -v kdocker >/dev/null 2>&1 && [ "$START_MINIMIZED" = "yes" ]; then export KDOCKER="env QT_QPA_PLATFORM=xcb $(command -v kdocker) -i /usr/share/icons/hicolor/scalable/apps/libation.svg"; fi; exec ${KDOCKER:+$KDOCKER }/usr/bin/libation'
+KillMode=control-group
+TimeoutStopSec=5s
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+

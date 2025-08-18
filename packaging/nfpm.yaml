@@ -13,14 +13,9 @@ license: GPL-3.0-or-later
 
 contents:
   # systemd user units
-  - src: systemd/user/libation.service
-    dst: /usr/share/libation-systemd/systemd/user/libation.service
-  - src: systemd/user/libation-s3.service
-    dst: /usr/share/libation-systemd/systemd/user/libation-s3.service
-  - src: systemd/user/libation-s3-warmup.service
-    dst: /usr/share/libation-systemd/systemd/user/libation-s3-warmup.service
-  - src: systemd/user/app-libation.slice
-    dst: /usr/share/libation-systemd/systemd/user/app-libation.slice
+  - src: systemd/user/
+    dst: /usr/share/libation-systemd/systemd/user
+    type: tree
 
   # env template and setup helper
   - src: config/env.example
@@ -36,19 +31,17 @@ contents:
     file_info:
       mode: 0755
 
+depends:
+  - systemd
+  - fuse3
+  - rclone (>= 1.60)
+  - libation
+
 overrides:
   deb:
-    depends:
-      - rclone (>= 1.60)
-      - fuse3
-      - libation
     recommends:
       - libnotify-bin
   rpm:
-    depends:
-      - rclone >= 1.60
-      - fuse3
-      - libation
     recommends:
       - libnotify
 
